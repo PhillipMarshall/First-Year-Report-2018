@@ -1,10 +1,122 @@
-\chapter{My third chapter}
+\chapter{Results}
 
 % **************************** Define Graphics Path **************************
-\ifpdf
-    \graphicspath{{Chapter3/Figs/Raster/}{Chapter3/Figs/PDF/}{Chapter3/Figs/}}
-\else
-    \graphicspath{{Chapter3/Figs/Vector/}{Chapter3/Figs/}}
-\fi
 
-\section{First section of the third chapter}
+\graphicspath{{Figs/}}
+
+%********************************** %First Section  **************************************
+
+\section{Pixels} %Section - 1.1 
+Before any data could be fed into a cnn the data had to be formatted correctly. To simulate a grid of pixels from the xyz coordinate data the points were binned, with the number of bins representing the number of pixels in the x and y directions. The future VELO sensors are square 256x256 arrays of pixels, arranged 3 in a row, and 2 of these sensor triplets arranged in an L shape. [Insert diagram of VELO module]. To give relative realism to the binning process 1024 bins were used, giving an image with 1048576 total pixels. [Insert image of input layer]. However this method is very memory intensive and would crash when running on my laptop. Therefore the decision was made to down sample the image to 128x128 pixels, 16384 total pixels. This would allow it to run while not impacting on the images formed, by this I mean down sampling did not lead to a situation where 2 hits ended up in the same pixel. Various combinations of convolutional and fully connected layers were tried and tested but with few satisfactory results. There was promise when the network first started ‘learning’, ie the loss reduced over time. However on closer inspection it was found that the network was doing this by simply setting all pixel values to 0. An attempt to improve performance was made by designating which parts of the xy plane expected hits and which areas were not active pixel regions. [Insert image of new input layer]. This had little effect on performance.
+
+\subsection{Results}
+
+\subsection{Discussion}
+
+%********************************** %Second Section  **************************************
+
+\section{Points} %Section - 1.2
+After having very little success with this ‘pixel’ method I changed direction. Instead of taking the xyz coordinates of each hit and turning it into an image, the raw xyz coordinates were used directly. This will most likely be the method of the eventual solution. The method of formatting the data was as follows. Take the xyz coordinates for 2 layer of the detector, since particle id is known and given, remove any hits that do not appear in both layers, this is helpful as it means we know which x and y points in 1 layer correspond to the xy points in the next layer. Create 1d arrays for the x and y coordinates of each hit for every event in each mdbatch data file, each array has the format (x0, y0, x1, y1, …, xn, yn). The hits from the first layer are the data, the hits from the second layer are the labels. Each array was split to create 6 final arrays. Training data, testing data, validation data, validation labels, testing data, testing labels. These were saved as datasets into an h5py file for fast reading and writing of data.
+The configuration of the neural network was different for this ‘points’ method. It was first thought that a problem with this method was that each event has a different number of points, and neural networks need a consistent size input and output. The solution to this is to feed in one xy point at a time. So the network had input and output sizes of 2. This means 1 xy pair is trained on each time. The network had one fully connected hidden layer of size 1024.
+The ‘points’ method has had promising results. For outer layers of the VELO it is very good at predicting hits in the next layer. But is less accurate for layers closer to the collision point. [Insert images of outputs].
+
+\begin{figure}[h] % h for here in document
+\centering
+\begin{subfigure}[t]{0.45\textwidth}
+\centering
+\includegraphics[width=\textwidth]{Figs/layers-136-161}
+\caption{} 
+\label{fig:2a} 
+\end{subfigure}
+~
+\begin{subfigure}[t]{0.45\textwidth}
+\includegraphics[width=\textwidth]{Figs/layers-686-736}
+\caption{} 
+\label{fig:2b}
+\end{subfigure}
+\end{figure}
+
+
+\subsection{Results}
+
+\subsection{Discussion}
+
+%********************************** %Second Section  **************************************
+
+\section{Closest numbers and points} %Section - 1.3
+I was tasked with creating a neural net that could use a set of 8 random numbers as an input and output the pair that have the smallest difference. This would then lead on to finding the closest pair of 2-vectors from a random set. The long term aim of this is to develop a system that can connect 2D points into tracks.
+Most effort was involved in creating data files in the correct format. Supervised learning requires labels that the neural network output can be tested against. A logical label would have the format of an array of zeros for each input number or vector, with a 1 value for the two points that are the closest together. With this problem solved it is a relatively simple job to setup a neural network model using Keras as a front end to Tensorflow. Initial accuracy's of ~96\% for 1 million samples of random points were encouraging.\\
+
+The accuracy of this method was tested further to fully understand the neural network output.
+
+\begin{figure}[h] % h for here in document
+\centering
+\begin{subfigure}[t]{0.45\textwidth}
+\centering
+\includegraphics[width=\textwidth]{Figs/closest_dist_fail2.png}
+\caption{An example of a failure case} 
+\label{fig:3a} 
+\end{subfigure}
+~
+\begin{subfigure}[t]{0.45\textwidth}
+\includegraphics[width=\textwidth]{Figs/pred_dif_hist.png}
+\caption{A histogram representing the output of the neural network} 
+\label{fig:3b}
+\end{subfigure}
+\end{figure}
+
+The output of the neural network was a vector of zeros with length 10. Two 1's in this vector represent the two points to be connected. If there was a 1 at position 2 and position 4 then points 2 and 4 were deemed the closest pair.
+
+\[
+\begin{pmatrix}
+0 & 0 & 1 & 0 & 1 & 0 & 0 & 0 & 0 & 0
+\end{pmatrix}
+\]
+
+To investigate the output of the network the difference between the predicted and true vectors was calculated. This was done by taking the absolute of element wise subtraction. Therefore if the predicted vector was the same as the true vector then the difference would be 0. If one point was incorrectly classified then the difference would be 2. And finally if both points were incorrectly classified then the difference would be 4. The histogram in Figure... shows this over all 100000 testing samples. The majority are correctly classified (57\%), some have one incorrect classification (14\%) and some have two incorrect classifications (29\%). These numbers are nowhere near the 96\% claimed accuracy, this does not mean however, that the network is bad at finding pairs of closest points. Failure cases were investigated to understand. figure a shows one failure case. The nerual network has found a pair of points with a distance apart very close to the true closest pair. For the intended application in particle physics this is a very satisfactory result.
+
+
+\subsection{Results}
+
+\subsection{Discussion}
+
+%********************************** %Second Section  **************************************
+
+\section{Joining the dots} %Section - 1.4 
+After initial success of finding the two closest points I moved onto connecting more points together to 'join the dots'. This was defined as finding the two closest points, then from one of these points finding the next closest. This was achieved by...\\
+Finding the two closest points is an established problem which can be solved quickly.\\
+The next step was to use the neural network for the entire process, finding the two closest points and then joining the dots. It was important to find the correct way to represent the connections between points. Many different ways were tried. Firstly using the adjacency matrix of the points, then using the indices of the points was tried, also simply using the network to give back the coordinates in the connected order.\\
+Only one method worked well. that was to train the neural network to output the undirected adjacency matrix of the points. An adjacency matrix is an n x n matrix, for n points, which shows which points are connected to each other. There are 0's where there is no connection, and 1's where there is a connection. So, for example, if points 2 and 3 are connected, there will be a 1 in the 2nd row and 3rd column of the adjacency matrix. However there will also be a 1 in the 3rd row and 2nd column, as the direction of the connection is not important. \\
+
+\[
+\begin{pmatrix}
+0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 1 \\
+0 & 0 & 1 & 0
+\end{pmatrix}
+\]
+
+The neural network was fed sets of 10 random 2d points with x and y ranging between 0 and 1. The adjacency matrix for each set of 10 points was calculated. To start 1 million sets of random numbers were used, 80\% for training, 10\% for validation and 10\% for testing. After inital testing gave encouraging results 5 million sets of random numbers and corresponding adjacency matrices were generated.\\
+
+Here I will include results.
+
+\section{Receiver Operating Codes}
+Results must have an error metric so that they can be compared. The language of receiver operating codes fits well in this context. The true connections between points are calculated so that the neural networks can be trained. Therefore the neural network output can be correct or incorrect in these ways:
+\begin{itemize}
+    \item True Positive (TP) - A connection was made when it should have been.
+    \item True Negative (TN) - A connection was not made when it should not have been.
+    \item False Positive (FP) - A connection was made when it should not have been.
+    \item False Negative (FN) - A connection was not made when it should have been.
+\end{itemize}
+To understand the numbers of these outcomes the Sensitivity and Specificity are calculated.
+\[ Sensitivity = \frac{TP}{TP + FN} \]
+\[ Specificity = \frac{TN}{TN + FP} \]
+
+Both these metrics must be high in order to have satisfactory results. If the sensitivity is high but the specificity is low then this indicates the neural network is connecting all points together, this will make sure all correct connections are made. If the specificity is high but the sensitivity is low then the network will not connect any points together. Therefore a balance is needed for good performance\\
+A ROC curve is a plot of Sensitivity against 1-Specificity over some parameter. In my case the parameter was the threshold of the neural network output. Thanks to the last layer having a Sigmoid activation function each element of the output was a number between 0 and 1. The adjacency matrix must only contain 0's and 1's so a threshold was used, any output element below the threshold was set to 0, and any element above the threshold was set to 1. Plotting the ROC curve allows for tuning of the threshold to an optimum. The further to the top and left the ROC curve goes indicates better performance.
+\textbf{}
+
+\subsection{Results}
+
+\subsection{Discussion}
